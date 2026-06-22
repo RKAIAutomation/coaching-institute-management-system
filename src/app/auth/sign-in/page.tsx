@@ -129,7 +129,7 @@ export default function SignIn() {
                 </Link>
               </p>
               <p>
-                Don&apos;t have an account?{' '}
+                Don&lsquo;t have an account?{' '}
                 <Link href="/auth/sign-up" className="text-primary hover:underline">
                   Sign up
                 </Link>
