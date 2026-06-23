@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { SiteContainer } from '@/components/site-shell'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { FacultyDocuments } from '@/components/faculty/faculty-documents'
 import { useAuth } from '@/lib/auth'
 import { canManageFaculty, canViewFaculty, getFacultyById, type FacultyRow } from '@/lib/faculty'
 
@@ -175,6 +176,14 @@ export default function FacultyDetailsPage({ params }: FacultyDetailsPageProps) 
           </div>
         </CardContent>
       </Card>
+
+      <FacultyDocuments
+        facultyId={faculty.id}
+        facultyEmail={faculty.email}
+        roleName={profile?.role_name}
+        currentUserEmail={profile?.email}
+        canManage={canManage}
+      />
     </SiteContainer>
   )
 }

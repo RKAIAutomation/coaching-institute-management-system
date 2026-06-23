@@ -1,0 +1,154 @@
+'use client'
+
+import { supabase } from './supabaseClient'
+
+const BUCKET_NAME = 'faculty-documents'
+
+export interface FacultyDocumentRow {
+  id: string
+  faculty_id: string
+  document_name: string
+  document_type: string
+  file_path: string
+  created_at?: string
+}
+
+export interface UploadFacultyDocumentInput {
+  facultyId: string
+  documentName: string
+  documentType: string
+  file: File
+}
+
+export const ALLOWED_DOCUMENT_MIME_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+]
+
+export const ALLOWED_DOCUMENT_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'webp']
+
+export function validateFacultyDocumentFile(file: File): string | null {
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const hasAllowedMime = ALLOWED_DOCUMENT_MIME_TYPES.includes(file.type)
+  const hasAllowedExtension = ALLOWED_DOCUMENT_EXTENSIONS.includes(ext)
+
+  if (!hasAllowedMime && !hasAllowedExtension) {
+    return 'Only PDF, JPG, PNG, and WEBP files are allowed'
+  }
+
+  return null
+}
+
+function toFacultyDocumentRow(row: any): FacultyDocumentRow {
+  return {
+    id: String(row.id),
+    faculty_id: String(row.faculty_id),
+    document_name: String(row.document_name || ''),
+    document_type: String(row.document_type || ''),
+    file_path: String(row.file_path || ''),
+    created_at: row.created_at ? String(row.created_at) : undefined,
+  }
+}
+
+export async function listFacultyDocuments(facultyId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('faculty_documents')
+      .select('id, faculty_id, document_name, document_type, file_path, created_at')
+      .eq('faculty_id', facultyId)
+      .order('created_at', { ascending: false })
+
+    if (error) throw error
+
+    return {
+      data: (data || []).map((row) => toFacultyDocumentRow(row)),
+      error: null,
+    }
+  } catch (error) {
+    return {
+      data: [] as FacultyDocumentRow[],
+      error,
+    }
+  }
+}
+
+export async function uploadFacultyDocument(input: UploadFacultyDocumentInput) {
+  try {
+    const fileValidationError = validateFacultyDocumentFile(input.file)
+    if (fileValidationError) {
+      throw new Error(fileValidationError)
+    }
+
+    const fileExt = input.file.name.split('.').pop()?.toLowerCase() || 'bin'
+    const safeName = input.documentName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const filePath = `faculty/${input.facultyId}/${safeName}-${uniqueSuffix}.${fileExt}`
+
+    const { error: uploadError } = await supabase.storage.from(BUCKET_NAME).upload(filePath, input.file, {
+      upsert: false,
+      contentType: input.file.type || undefined,
+    })
+
+    if (uploadError) throw uploadError
+
+    const { data, error: insertError } = await supabase
+      .from('faculty_documents')
+      .insert([
+        {
+          faculty_id: input.facultyId,
+          document_name: input.documentName,
+          document_type: input.documentType,
+          file_path: filePath,
+        },
+      ])
+      .select('id, faculty_id, document_name, document_type, file_path, created_at')
+      .single()
+
+    if (insertError) {
+      await supabase.storage.from(BUCKET_NAME).remove([filePath])
+      throw insertError
+    }
+
+    return { data: toFacultyDocumentRow(data), error: null }
+  } catch (error) {
+    if (error instanceof Error) return { data: null, error }
+    if (error && typeof error === 'object' && 'message' in error) {
+      return { data: null, error: new Error((error as any).message) }
+    }
+    return { data: null, error: new Error('Failed to upload faculty document') }
+  }
+}
+
+export async function getFacultyDocumentSignedUrl(filePath: string, expiresIn = 60) {
+  try {
+    const { data, error } = await supabase.storage.from(BUCKET_NAME).createSignedUrl(filePath, expiresIn)
+
+    if (error) throw error
+
+    return { data: data.signedUrl, error: null }
+  } catch (error) {
+    return { data: null, error }
+  }
+}
+
+export async function deleteFacultyDocument(document: FacultyDocumentRow) {
+  try {
+    const { error: storageError } = await supabase.storage.from(BUCKET_NAME).remove([document.file_path])
+
+    if (storageError) throw storageError
+
+    const { error: deleteError } = await supabase.from('faculty_documents').delete().eq('id', document.id)
+
+    if (deleteError) throw deleteError
+
+    return { error: null }
+  } catch (error) {
+    if (error instanceof Error) return { error }
+    if (error && typeof error === 'object' && 'message' in error) {
+      return { error: new Error((error as any).message) }
+    }
+    return { error: new Error('Failed to delete document') }
+  }
+}
