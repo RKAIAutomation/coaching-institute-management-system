@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { canViewStudents } from '@/lib/students'
+import { canViewFaculty } from '@/lib/faculty'
 import { useAuth } from '@/lib/auth'
 
 export function Sidebar() {
@@ -23,6 +24,14 @@ export function Sidebar() {
     navItems.push({
       href: '/dashboard/students',
       label: 'Students',
+      exact: false,
+    })
+  }
+
+  if (canViewFaculty(profile?.role_id, profile?.role_name)) {
+    navItems.push({
+      href: '/dashboard/faculty',
+      label: 'Faculty',
       exact: false,
     })
   }
