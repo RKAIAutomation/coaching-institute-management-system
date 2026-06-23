@@ -72,7 +72,7 @@ export default function ForgotPassword() {
                 </Link>
               </p>
               <p>
-                Do not have an account?{' '}
+                  Do not have an account?{' '}
                 <Link href="/auth/sign-up" className="text-primary hover:underline">
                   Sign up
                 </Link>
