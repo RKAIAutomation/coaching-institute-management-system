@@ -42,23 +42,59 @@ export function validateFacultyDocumentFile(file: File): string | null {
 }
 
 function toFacultyDocumentRow(row: any): FacultyDocumentRow {
+  const fileUrl = String(row.file_url || row.file_path || '')
+  const uploadedAt = row.uploaded_at || row.created_at
+
   return {
     id: String(row.id),
     faculty_id: String(row.faculty_id),
     document_name: String(row.document_name || ''),
     document_type: String(row.document_type || ''),
-    file_path: String(row.file_path || ''),
-    created_at: row.created_at ? String(row.created_at) : undefined,
+    file_path: fileUrl,
+    created_at: uploadedAt ? String(uploadedAt) : undefined,
   }
+}
+
+function isAbsoluteUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value)
+}
+
+function extractStoragePath(filePathOrUrl: string): string | null {
+  if (!filePathOrUrl) return null
+
+  if (!isAbsoluteUrl(filePathOrUrl)) {
+    return filePathOrUrl
+  }
+
+  try {
+    const parsed = new URL(filePathOrUrl)
+    const markers = ['/object/public/', '/object/sign/', '/object/authenticated/']
+
+    for (const marker of markers) {
+      const markerIndex = parsed.pathname.indexOf(marker)
+      if (markerIndex === -1) continue
+
+      const suffix = parsed.pathname.slice(markerIndex + marker.length)
+      const bucketPrefix = `${BUCKET_NAME}/`
+
+      if (suffix.startsWith(bucketPrefix)) {
+        return decodeURIComponent(suffix.slice(bucketPrefix.length))
+      }
+    }
+  } catch {
+    return null
+  }
+
+  return null
 }
 
 export async function listFacultyDocuments(facultyId: string) {
   try {
     const { data, error } = await supabase
       .from('faculty_documents')
-      .select('id, faculty_id, document_name, document_type, file_path, created_at')
+      .select('id, faculty_id, document_name, document_type, file_url, uploaded_at')
       .eq('faculty_id', facultyId)
-      .order('created_at', { ascending: false })
+      .order('uploaded_at', { ascending: false })
 
     if (error) throw error
 
@@ -100,10 +136,10 @@ export async function uploadFacultyDocument(input: UploadFacultyDocumentInput) {
           faculty_id: input.facultyId,
           document_name: input.documentName,
           document_type: input.documentType,
-          file_path: filePath,
+          file_url: filePath,
         },
       ])
-      .select('id, faculty_id, document_name, document_type, file_path, created_at')
+      .select('id, faculty_id, document_name, document_type, file_url, uploaded_at')
       .single()
 
     if (insertError) {
@@ -123,7 +159,16 @@ export async function uploadFacultyDocument(input: UploadFacultyDocumentInput) {
 
 export async function getFacultyDocumentSignedUrl(filePath: string, expiresIn = 60) {
   try {
-    const { data, error } = await supabase.storage.from(BUCKET_NAME).createSignedUrl(filePath, expiresIn)
+    if (isAbsoluteUrl(filePath)) {
+      return { data: filePath, error: null }
+    }
+
+    const storagePath = extractStoragePath(filePath)
+    if (!storagePath) {
+      throw new Error('Invalid document file path')
+    }
+
+    const { data, error } = await supabase.storage.from(BUCKET_NAME).createSignedUrl(storagePath, expiresIn)
 
     if (error) throw error
 
@@ -135,9 +180,12 @@ export async function getFacultyDocumentSignedUrl(filePath: string, expiresIn = 
 
 export async function deleteFacultyDocument(document: FacultyDocumentRow) {
   try {
-    const { error: storageError } = await supabase.storage.from(BUCKET_NAME).remove([document.file_path])
+    const storagePath = extractStoragePath(document.file_path)
 
-    if (storageError) throw storageError
+    if (storagePath) {
+      const { error: storageError } = await supabase.storage.from(BUCKET_NAME).remove([storagePath])
+      if (storageError) throw storageError
+    }
 
     const { error: deleteError } = await supabase.from('faculty_documents').delete().eq('id', document.id)
 
