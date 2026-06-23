@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import { Navbar } from '@/components/navbar'
+import { Sidebar } from '@/components/sidebar'
 import { SiteShell } from '@/components/site-shell'
 
 interface DashboardLayoutProps {
@@ -35,8 +36,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <span className="text-sm text-muted-foreground">({profile?.role_name || 'Authenticated'})</span>
         </div>
       </Navbar>
-      <div className="flex-1 bg-muted/50">
-        {children}
+      <div className="flex flex-1 bg-muted/50">
+        <Sidebar />
+        <div className="flex-1">
+          {children}
+        </div>
       </div>
     </SiteShell>
   )
